@@ -27,6 +27,11 @@ def _get_filenames(root_dir, filelist):
     )
     return files
 
+def write_val_samples(root_dir, samples, labels):
+    with open(f"{root_dir}/val_samples.txt", "w", encoding="utf-8") as f:
+        for i in range(len(samples)):
+            f.write(f"{samples[i]} {labels[i]}\n")
+    print(f"Saved val samples to '{root_dir}'")
 
 
 def files_load_split(root_dir):

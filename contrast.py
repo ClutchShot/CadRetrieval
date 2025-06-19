@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.seed import seed_everything
 
 from datasets.solidletters import SolidLetters
-from datasets.fabwave import FABWave, files_load_split
+from datasets.fabwave import FABWave, files_load_split, write_val_samples
 from uvnet.models import Contrast
 
 parser = argparse.ArgumentParser("CAD retrieval learning")
@@ -71,6 +71,7 @@ if args.dataset == "solidletters":
     val_data = Dataset(root_dir=args.dataset_path, split="val")
 elif args.dataset == "FABWave":
     train_files, val_files, y_train, y_val = files_load_split(root_dir=args.dataset_path)
+    write_val_samples(args.dataset_path, val_files, y_val)
     train_data = FABWave(file_paths=train_files, labels=y_train, split="train")
     val_data = FABWave(file_paths=val_files, labels=y_val, split="val")
 else:
