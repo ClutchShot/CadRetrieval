@@ -30,18 +30,12 @@ parser.add_argument(
     default=None,
     help="Checkpoint file to load weights from for testing",
 )
-parser.add_argument(
-    "--experiment_name",
-    type=str,
-    default="classification",
-    help="Experiment name (used to create folder inside ./results/ to save logs and checkpoints)",
-)
 
 parser = Trainer.add_argparse_args(parser)
 args = parser.parse_args()
 
 results_path = (
-    pathlib.Path(__file__).parent.joinpath("results").joinpath(args.experiment_name)
+    pathlib.Path(__file__).parent.joinpath("results")
 )
 if not results_path.exists():
     results_path.mkdir(parents=True, exist_ok=True)
@@ -83,13 +77,13 @@ if args.traintest == "train":
     print(
         f"""
 -----------------------------------------------------------------------------------
-Logs written to results/{args.experiment_name}/{month_day}/{hour_min_second}
+Logs written to results/{month_day}/{hour_min_second}
 
 To monitor the logs, run:
-tensorboard --logdir results/{args.experiment_name}/{month_day}/{hour_min_second}
+tensorboard --logdir results/{month_day}/{hour_min_second}
 
 The trained model with the best validation loss will be written to:
-results/{args.experiment_name}/{month_day}/{hour_min_second}/best.ckpt
+results/{month_day}/{hour_min_second}/best.ckpt
 -----------------------------------------------------------------------------------
     """
     )
