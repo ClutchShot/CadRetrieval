@@ -431,9 +431,7 @@ class Contrast(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = UVNetContrast(out_emb_dim=out_emb_dim)
-        self.train_acc = torchmetrics.Accuracy()
-        self.val_acc = torchmetrics.Accuracy()
-        self.test_acc = torchmetrics.Accuracy()
+
 
     def forward(self, batched_graph):
         logits = self.model(batched_graph)
@@ -485,6 +483,27 @@ class Contrast(pl.LightningModule):
 
         loss = self.loss_cal(x, x_aug)
         self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+
+    def predict(self, batch):
+        inputs = batch["graph"].to(self.device)
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        self.eval()
+        with torch.no_grad():
+            return self.model(inputs)
+        
+    def predict_one(self, graph):
+        inputs = graph.to(self.device)
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        self.eval()
+        with torch.no_grad():
+            return self.model(inputs)
+
+    # Optional: For Trainer.predict()
+    def predict_step(self, batch, batch_idx, dataloader_idx = None):
+        x, _ = batch
+        return self.model(x)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters())

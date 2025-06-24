@@ -20,7 +20,7 @@ def calculate_map(queries, top_k_results, verbose=False):
         raise ValueError("Number of queries must match number of result sets")
     
     # Precompute relevant items per query
-    query_labels = [q['label'] for q in queries]
+    # query_labels = [q['label'] for q in queries]
     # label_to_items = defaultdict(list)
     # for i, label in enumerate(query_labels):
     #     label_to_items[label].append(i)
@@ -79,27 +79,19 @@ if __name__ == "__main__":
 
     queries = [
         {"name": "query_1", "label": 0},
-        {"name": "query_2", "label": 1},
-        {"name": "query_3", "label": 2},
     ]
     
     # Retrieved items for each query (top_k=3)
     top_k_results = [
         [  
-            {"name": "top_1", "label": 0},  
+            {"name": "top_1", "label": 1},  
             {"name": "top_2", "label": 1},
             {"name": "top_3", "label": 1},
+            {"name": "top_4", "label": 0},  
+            {"name": "top_5", "label": 0},
+            {"name": "top_6", "label": 0},
+            {"name": "top_7", "label": 0},
         ],
-        [  
-            {"name": "top_1", "label": 1}, 
-            {"name": "top_2", "label": 2},
-            {"name": "top_3", "label": 0},
-        ],
-        [  
-            {"name": "top_1", "label": 2}, 
-            {"name": "top_2", "label": 2},
-            {"name": "top_3", "label": 2},
-        ]
     ]
     
     # Calculate mAP
