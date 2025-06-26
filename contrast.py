@@ -1,7 +1,7 @@
 import argparse
 import pathlib
 import time
-
+from tqdm import tqdm
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -11,13 +11,14 @@ from datasets.solidletters import SolidLetters
 from datasets.fabwave import FABWave, files_load_split, write_val_samples
 from uvnet.models import Contrast
 
+from retrieval.vector_db import VectorDatabase
+from retrieval.metrics import calculate_map
+
 parser = argparse.ArgumentParser("CAD retrieval learning")
-parser.add_argument(
-    "traintest", choices=("train", "test"), help="Whether to train or test"
-)
 parser.add_argument("--dataset", choices=("solidletters", "FABWave"), help="Dataset to train on")
 parser.add_argument("--dataset_path", type=str, help="Path to dataset")
 parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
+parser.add_argument("--db_path", type=str, help="Path to vector db")
 parser.add_argument(
     "--num_workers",
     type=int,
@@ -71,11 +72,11 @@ elif args.dataset == "FABWave":
 else:
     raise ValueError("Unsupported dataset")
 
-if args.traintest == "train":
-    # Train/val
-    seed_everything(workers=True)
-    print(
-        f"""
+
+# Train/val
+seed_everything(workers=True)
+print(
+    f"""
 -----------------------------------------------------------------------------------
 Logs written to results/{month_day}/{hour_min_second}
 
@@ -85,27 +86,50 @@ tensorboard --logdir results/{month_day}/{hour_min_second}
 The trained model with the best validation loss will be written to:
 results/{month_day}/{hour_min_second}/best.ckpt
 -----------------------------------------------------------------------------------
-    """
-    )
-    model = Contrast(out_emb_dim=64)
-    train_loader = train_data.get_dataloader(
-        batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
-    )
-    val_loader = val_data.get_dataloader(
-        batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-    )
-    trainer.fit(model, train_loader, val_loader)
-else:
-    # Test
-    assert (
-        args.checkpoint is not None
-    ), "Expected the --checkpoint argument to be provided"
-    test_data = Dataset(root_dir=args.dataset_path, split="test")
-    test_loader = test_data.get_dataloader(
-        batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
-    )
-    model = Contrast.load_from_checkpoint(args.checkpoint)
-    results = trainer.test(model=model, test_dataloaders=[test_loader], verbose=False)
-    print(
-        f"Classification accuracy (%) on test set: {results[0]['test_acc_epoch'] * 100.0}"
-    )
+"""
+)
+model = Contrast(out_emb_dim=64)
+train_loader = train_data.get_dataloader(
+    batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+)
+val_loader = val_data.get_dataloader(
+    batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+)
+trainer.fit(model, train_loader, val_loader)
+
+vec_db = VectorDatabase(args.db_path, args.dataset, 64)
+
+if vec_db.get_vector_count() == 0:
+    # Get train embendings
+    for data in tqdm(train_loader, desc="Infernce train data"):
+        # model.predict() wrapered eval() and torch.no_grad()
+        out = model.predict(data)
+
+        out = out.cpu().numpy()
+        names = data['filename']
+        label = data['label'].numpy()
+
+        vec_db.add_vectors(vectors=out, names=names, labels=label)
+
+
+queries = []
+retrieval_all = []
+# Eval retrieval
+for data in tqdm(val_loader, desc="Eval"):
+
+    # model.predict() wrapered eval() and torch.no_grad()
+    out = model.predict(data)
+
+    out = out.cpu().numpy()
+    names = data['filename']
+    labels = data['label'].numpy()
+
+    retrieval_topk = vec_db.search(out, k=7)
+    retrieval_all.extend(retrieval_topk)
+    for name, label in zip(names, labels):
+        queries.append({"name": name, "label": label})
+
+
+map_score, detailed = calculate_map(queries, retrieval_all, verbose=True)
+print(f"mAP: {map_score:.4f}")
+
