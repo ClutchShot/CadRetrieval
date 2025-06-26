@@ -34,6 +34,17 @@ def write_val_samples(root_dir, samples, labels):
     print(f"Saved val samples to '{root_dir}'")
 
 
+# def read_samples(root_dir, samples):
+#     samples = []
+#     labels = []
+#     with open(f"{root_dir}/val_samples.txt", "r", encoding="utf-8") as f:
+#         lines = f.readlines()
+#         for line in lines:
+#             file, label = line.split(" ")
+#                 samples = []
+#                 labels = []
+
+
 def files_load_split(root_dir):
     path = pathlib.Path(root_dir)
 
@@ -106,7 +117,8 @@ class FABWave(BaseDataset):
     def load_one_graph(self, file_path, label):
         # Load the graph using base class method
         sample = super().load_one_graph(file_path)
-        sample_aug = self.drop_nodes(deepcopy(sample['graph'].clone()))
+        # sample_aug = self.drop_nodes(deepcopy(sample['graph'].clone()))
+        sample_aug = self.drop_nodes_dynamicaly(deepcopy(sample['graph'].clone()))
         # Load the graph using base class method
         sample["label"] = torch.tensor([torch.tensor(label).long()]).long()
         sample['graph_aug'] = sample_aug
@@ -128,6 +140,24 @@ class FABWave(BaseDataset):
 
         idx_drop = np.random.choice(node_num, drop_num, replace=False)
 
+        data.remove_nodes(idx_drop)
+        return data
+    
+    def drop_nodes_dynamicaly(self, data : DGLHeteroGraph, threshold : int = 10):
+        node_num = data.num_nodes()
+        if node_num <= threshold:
+            return data
+
+        # Dynamic removal percentage (sigmoid-like scaling between 5% and 20%)
+        base_percent = 0.05  # 1% minimum removal
+        scaling_factor = 1 / (1 + np.exp(-(node_num - 50)/20))  # Smooth scaling
+        removal_percent = base_percent + (0.19 * scaling_factor)  # Ranges 1%-20%
+
+        # Calculate number of nodes to remove
+        drop_num = max(1, int(node_num * removal_percent))
+        drop_num = min(drop_num, node_num - 1)  # Never remove all nodes
+        # drop_num = int(node_num / 10)
+        idx_drop = np.random.choice(node_num, drop_num, replace=False)
         data.remove_nodes(idx_drop)
         return data
     
