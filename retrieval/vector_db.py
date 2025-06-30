@@ -5,8 +5,7 @@ import os
 import hashlib
 from typing import List, Dict, Any, Union, Optional
 import pickle
-import hashlib
-
+from collections import defaultdict
 
 class VectorDatabase:
     def __init__(self, db_folder: str, db_name: str, dimension: int = 64, metric='L2'):
@@ -74,7 +73,8 @@ class VectorDatabase:
     def add_vectors(self,
                     vectors: np.ndarray,
                     names: List[str],
-                    labels: List[int]):
+                    labels: List[str], 
+                    dupicates: bool = False):
         """
         Add vectors with names and labels to database
 
@@ -93,7 +93,6 @@ class VectorDatabase:
 
         # Convert to numpy array if needed
         vectors = np.array(vectors, dtype='float32')
-        labels = np.array(labels, dtype='int32')
 
         new_metadata = []
 
@@ -101,8 +100,7 @@ class VectorDatabase:
         for index in range(len(vectors)):
 
             vec_hash = self._get_vector_hash(vectors[index])
-
-            if vec_hash in self.vector_hashes:
+            if not dupicates and vec_hash in self.vector_hashes:
                 continue
             else:
                 # Add to index
@@ -115,7 +113,8 @@ class VectorDatabase:
                     }
                 )
                 # Add to runtim hash
-                self.vector_hashes.add(vec_hash)
+                if not dupicates:
+                    self.vector_hashes.add(vec_hash)
 
         # Add metadata
         self.metadata.extend(new_metadata)
@@ -200,6 +199,21 @@ class VectorDatabase:
     def get_vector_count(self) -> int:
         """Return number of vectors in the database"""
         return self.index.ntotal if self.index else 0
+    
+    def get_metadata(self) -> list:
+        return self.metadata
+    
+    def get_metadata_dict(self):
+        metadata = self.get_metadata()
+        metadata_dict = dict()
+        for meta in metadata:
+            if meta['label'] in metadata_dict.keys():
+                metadata_dict[meta['label']] += 1
+            else:
+                metadata_dict[meta['label']] = 1
+
+        sorted_dict = dict(sorted(metadata_dict.items(), key=lambda item: item[1], reverse=True))
+        return sorted_dict
 
 
 # # Example usage

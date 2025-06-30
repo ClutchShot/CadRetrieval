@@ -423,7 +423,7 @@ class Contrast(pl.LightningModule):
     PyTorch Lightning module to train/test the classifier.
     """
 
-    def __init__(self, out_emb_dim):
+    def __init__(self, out_emb_dim, loss = "L2"):
         """
         Args:
             num_classes (int): Number of per-solid classes in the dataset
@@ -431,6 +431,11 @@ class Contrast(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = UVNetContrast(out_emb_dim=out_emb_dim)
+        self.loss = None
+        if loss == "L2":
+            self.loss = L2_loss
+        elif loss == "graphcl":
+            self.loss = graphCl_loss
 
 
     def forward(self, batched_graph):
@@ -449,7 +454,7 @@ class Contrast(pl.LightningModule):
         x = self.model(inputs)
         x_aug = self.model(inputs_aug)
 
-        loss = self.loss_cal(x, x_aug)
+        loss = self.loss(x, x_aug)
         self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         return loss
 
@@ -465,7 +470,7 @@ class Contrast(pl.LightningModule):
         x = self.model(inputs)
         x_aug = self.model(inputs_aug)
 
-        loss = self.loss_cal(x, x_aug)
+        loss = self.loss(x, x_aug)
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         return loss
 
@@ -481,7 +486,7 @@ class Contrast(pl.LightningModule):
         x = self.model(inputs)
         x_aug = self.model(inputs_aug)
 
-        loss = self.loss_cal(x, x_aug)
+        loss = self.loss(x, x_aug)
         self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
     def predict(self, batch):
@@ -509,16 +514,20 @@ class Contrast(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters())
         return optimizer
     
-    def loss_cal(self, x, x_aug):
-        T = 0.2
-        batch_size, _ = x.size()
-        x_abs = x.norm(dim=1)
-        x_aug_abs = x_aug.norm(dim=1)
+    
+def graphCl_loss(x, x_aug):
+    T = 0.2
+    batch_size, _ = x.size()
+    x_abs = x.norm(dim=1)
+    x_aug_abs = x_aug.norm(dim=1)
 
-        sim_matrix = torch.einsum('ik,jk->ij', x, x_aug) / torch.einsum('i,j->ij', x_abs, x_aug_abs)
-        sim_matrix = torch.exp(sim_matrix / T)
-        pos_sim = sim_matrix[range(batch_size), range(batch_size)]
-        loss = pos_sim / (sim_matrix.sum(dim=1) - pos_sim)
-        loss = - torch.log(loss).mean()
+    sim_matrix = torch.einsum('ik,jk->ij', x, x_aug) / torch.einsum('i,j->ij', x_abs, x_aug_abs)
+    sim_matrix = torch.exp(sim_matrix / T)
+    pos_sim = sim_matrix[range(batch_size), range(batch_size)]
+    loss = pos_sim / (sim_matrix.sum(dim=1) - pos_sim)
+    loss = - torch.log(loss).mean()
 
-        return loss
+    return loss
+
+def L2_loss(x, x_aug):
+    return torch.norm(x - x_aug, p=2, dim=1).mean()
