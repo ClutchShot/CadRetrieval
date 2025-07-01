@@ -81,26 +81,26 @@ def calculate_map(queries: list[dict], top_k_results: list[dict], verbose: bool 
 
 
 # Example usage:
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    queries = [
-        {"name": "query_1", "label": 0},
-    ]
+#     queries = [
+#         {"name": "query_1", "label": 0},
+#     ]
 
-    # Retrieved items for each query (top_k=3)
-    top_k_results = [
-        [
-            {"name": "top_1", "label": 1},
-            {"name": "top_2", "label": 1},
-            {"name": "top_3", "label": 1},
-            {"name": "top_4", "label": 1},
-            {"name": "top_5", "label": 0},
-            {"name": "top_6", "label": 1},
-            {"name": "top_7", "label": 1},
-        ],
-    ]
+#     # Retrieved items for each query (top_k=7)
+#     top_k_results = [
+#         [
+#             {"name": "top_1", "label": 1},
+#             {"name": "top_2", "label": 1},
+#             {"name": "top_3", "label": 1},
+#             {"name": "top_4", "label": 1},
+#             {"name": "top_5", "label": 0},
+#             {"name": "top_6", "label": 1},
+#             {"name": "top_7", "label": 1},
+#         ],
+#     ]
 
-    # Calculate mAP
-    map_score, detailed = calculate_map(queries, top_k_results, verbose=True)
+#     # Calculate mAP
+#     map_score, detailed = calculate_map(queries, top_k_results, verbose=True)
 
-    print(f"mAP: {map_score:.4f}")
+#     print(f"mAP: {map_score:.4f}")

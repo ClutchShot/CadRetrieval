@@ -14,7 +14,7 @@ from uvnet.models import Contrast
 from sklearn.model_selection import train_test_split
 from retrieval.vector_db import VectorDatabase
 from retrieval.metrics import calculate_map
-from utils.safe_results import safe_raw_results, safe_by_class_results
+from utils.safe_results import safe_raw_results, safe_by_class_results, safe_total_results
 
 parser = argparse.ArgumentParser("CAD retrieval learning")
 parser.add_argument("--dataset", choices=("solidletters", "FABWave"), help="Dataset to train on")
@@ -23,6 +23,7 @@ parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
 parser.add_argument("--db_path", type=str, help="Path to vector db")
 parser.add_argument("--out_dim", type=int, help="Output dimension")
 parser.add_argument("--loss", choices=("L2", "graphcl"), help="Loss fuction", default="graphcl")
+parser.add_argument("--data_aug", choices=("standard", "dynamicaly"), help="Data augmentation", default="standard")
 parser.add_argument(
     "--num_workers",
     type=int,
@@ -73,8 +74,8 @@ elif args.dataset == "FABWave":
     files, labels = validate_graphs(files, labels)
     files, labels  = filter_classes_by_min_samples(files, labels)
     train_files, val_files, y_train, y_val = train_test_split(files, labels, test_size=0.2, random_state=42, stratify=labels)
-    train_data = FABWave(file_paths=train_files, labels=y_train, split="train")
-    val_data = FABWave(file_paths=val_files, labels=y_val, split="val")
+    train_data = FABWave(file_paths=train_files, labels=y_train, split="train", data_aug=args.data_aug)
+    val_data = FABWave(file_paths=val_files, labels=y_val, split="val", data_aug=args.data_aug)
 else:
     raise ValueError("Unsupported dataset")
 
@@ -101,7 +102,7 @@ train_loader = train_data.get_dataloader(
 val_loader = val_data.get_dataloader(
     batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
 )
-trainer.fit(model, train_loader, val_loader)
+# trainer.fit(model, train_loader, val_loader)
 
 vec_db = VectorDatabase(args.db_path, args.dataset, args.out_dim)
 
@@ -115,7 +116,7 @@ if vec_db.get_vector_count() == 0:
         names = data['filename']
         label = data['label']
 
-        vec_db.add_vectors(vectors=out, names=names, labels=label)
+        vec_db.add_vectors(vectors=out, names=names, labels=label, dupicates=True)
 
 
 queries = []
@@ -137,8 +138,7 @@ for data in tqdm(val_loader, desc="Eval"):
 
 
 map_score, detailed = calculate_map(queries, retrieval_all)
-print(f"mAP: {map_score:.4f}")
-
 
 safe_raw_results(args.db_path, detailed)
-safe_by_class_results(args.db_path, detailed)
+df_grouped = safe_by_class_results(args.db_path, detailed)
+safe_total_results(args.db_path, map_score, df_grouped)
