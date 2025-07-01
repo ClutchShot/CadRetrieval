@@ -189,7 +189,7 @@ def files_load(root_dir):
 
     return file_paths, labels
 
-def validate_graphs(file_paths : list[str], labels : list[str], duplcates : bool = False):
+def validate_graphs(file_paths : list[str], labels : list[str], duplicates : bool = False):
     clean_files = []
     new_labels = []
     hashes = set()
@@ -202,7 +202,7 @@ def validate_graphs(file_paths : list[str], labels : list[str], duplcates : bool
         if sample.edata["x"].size(0) == 0:
             # Catch the case of graphs with no edges
             continue
-        if not duplcates:
+        if not duplicates:
             hash = hashlib.sha256(sample.ndata["x"].numpy().tobytes()).hexdigest()
             if hash in hashes:
                 continue

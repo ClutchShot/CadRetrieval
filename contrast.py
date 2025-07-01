@@ -116,7 +116,7 @@ if vec_db.get_vector_count() == 0:
         names = data['filename']
         label = data['label']
 
-        vec_db.add_vectors(vectors=out, names=names, labels=label, dupicates=True)
+        vec_db.add_vectors(vectors=out, names=names, labels=label, duplicates=True)
 
 
 queries = []

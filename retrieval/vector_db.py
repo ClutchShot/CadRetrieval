@@ -74,7 +74,7 @@ class VectorDatabase:
                     vectors: np.ndarray,
                     names: List[str],
                     labels: List[str], 
-                    dupicates: bool = False):
+                    duplicates: bool = False):
         """
         Add vectors with names and labels to database
 
@@ -100,7 +100,7 @@ class VectorDatabase:
         for index in range(len(vectors)):
 
             vec_hash = self._get_vector_hash(vectors[index])
-            if not dupicates and vec_hash in self.vector_hashes:
+            if not duplicates and vec_hash in self.vector_hashes:
                 continue
             else:
                 # Add to index
@@ -113,7 +113,7 @@ class VectorDatabase:
                     }
                 )
                 # Add to runtim hash
-                if not dupicates:
+                if not duplicates:
                     self.vector_hashes.add(vec_hash)
 
         # Add metadata
