@@ -19,3 +19,5 @@ dependencies:
   - torchmetrics=0.3.2
   - tqdm=4.59.0
   - trimesh=3.9.18
+  - faiss-cpu
+  - pandas
