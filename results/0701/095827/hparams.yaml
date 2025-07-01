@@ -1,0 +1,2 @@
+loss: graphcl
+out_emb_dim: 64
