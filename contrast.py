@@ -102,7 +102,7 @@ train_loader = train_data.get_dataloader(
 val_loader = val_data.get_dataloader(
     batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
 )
-# trainer.fit(model, train_loader, val_loader)
+trainer.fit(model, train_loader, val_loader)
 
 vec_db = VectorDatabase(args.db_path, args.dataset, args.out_dim)
 
