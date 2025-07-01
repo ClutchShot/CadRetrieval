@@ -4,10 +4,10 @@ from dgl.data.utils import load_graphs
 from torch import FloatTensor
 from datasets import util
 
-model_weights = "./results/0619/133643/best.ckpt"
-vector_db_folder = "./data/vec_db"
+model_weights = "./results/0701/095827/best.ckpt"
+vector_db_folder = "./vector_db/1"
 vector_db_name = "FaBWave"
-cad_file = "./data/FABWave/Socket_Head_Screws/bin/jazukassocketheadscrew10.bin" # bin file
+cad_file = "./data/FABWave/Holebolts_With_Shoulders/bin/e075dc78-4a73-4e53-b6a6-b25f48e6830d.bin" # bin file
 
 
 db = VectorDatabase(vector_db_folder, vector_db_name)
@@ -26,4 +26,4 @@ graph.ndata["x"] = graph.ndata["x"].type(FloatTensor)
 graph.edata["x"] = graph.edata["x"].type(FloatTensor)
 
 query_vector = model.predict_one(graph).cpu().numpy()
-retrieval_topk_np = db.search(query_vector, k=10)
+retrieval_topk = db.search(query_vector, k=10)
