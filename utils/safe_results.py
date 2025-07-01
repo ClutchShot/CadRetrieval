@@ -19,12 +19,10 @@ def safe_by_class_results(file_path: str, results: list[dict]) -> pd.DataFrame:
     grouped.to_csv(csv_path, index=False)
     return grouped
 
-def compare_results_by_class(old_csv_path: str, new_csv_path: str, csv_path: str) -> pd.DataFrame:
+def compare_results_by_class(source: str, target: str) -> pd.DataFrame:
 
-    old_csv_path = os.path.join(old_csv_path, "raw_results.csv")
-    new_csv_path = os.path.join(new_csv_path, "raw_results.csv")
-    old_df = pd.read_csv(old_csv_path)
-    new_df = pd.read_csv(new_csv_path)
+    old_df = pd.read_csv(source)
+    new_df = pd.read_csv(target)
 
     # Merge the DataFrames on 'query_label' to align classes
     merged_df = pd.merge(old_df, new_df, on='query_label',
@@ -37,7 +35,7 @@ def compare_results_by_class(old_csv_path: str, new_csv_path: str, csv_path: str
     # Select relevant columns for the final DataFrame
     difference_df = merged_df[['query_label', 'delta_mean_ap', 'delta_mean_relevant']]
 
-    difference_df.to_csv(csv_path, index=False)
+    # difference_df.to_csv(csv_path, index=False)
 
     return difference_df
 
