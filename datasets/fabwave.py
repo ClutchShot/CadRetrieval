@@ -2,9 +2,16 @@ from tqdm import tqdm
 from datasets.base import BaseDataset
 from copy import deepcopy
 import dgl
+import torch
 from torch import FloatTensor
 from datasets.util import drop_nodes, drop_nodes_dynamicaly
-
+import numpy as np
+from dgl import DGLHeteroGraph
+from torch_geometric.data import Data, Batch
+from torch_geometric.graphgym.config import cfg
+# from GNNPlus.encoder.graphormer_encoder import graphormer_pre_processing
+from torch_geometric.loader import DataLoader
+from torch_geometric.data import Dataset
 
 class FABWave(BaseDataset):
 
@@ -28,6 +35,7 @@ class FABWave(BaseDataset):
         """
         self.random_rotate = random_rotate
         self.data_aug = None
+        self.split = split
         if data_aug == "standard":
             self.data_aug = drop_nodes
         elif data_aug == "dynamicaly":
@@ -36,7 +44,6 @@ class FABWave(BaseDataset):
         print(f"Loading {split} data...")
         self.load_graphs(file_paths, labels, center_and_scale)
         print("Done loading {} files".format(len(self.data)))
-
 
     def load_graphs(self, file_paths, labels, center_and_scale=True):
         self.data = []
@@ -79,24 +86,56 @@ class FABWave(BaseDataset):
         sample["label"] = label
         sample['graph_aug'] = sample_aug
         return sample
-    
+
+    # def _collate(self, batch):
+    #     collated = super()._collate(batch)
+    #     batched_graph_aug = dgl.batch([sample["graph_aug"] for sample in batch])
+    #     collated["graph_aug"] = batched_graph_aug
+    #     # collated["label"] =  torch.cat([x["label"] for x in batch], dim=0)
+    #     #  For str label
+    #     collated["label"] = [x["label"] for x in batch]
+    #     if any("graph_neg" in sample for sample in batch):
+    #         batched_graph_neg = dgl.batch([sample["graph_neg"] for sample in batch])
+    #         collated["graph_neg"] = batched_graph_neg
+    #     return collated
+
     def _collate(self, batch):
-        collated = super()._collate(batch)
-        batched_graph_aug = dgl.batch([sample["graph_aug"] for sample in batch])
-        collated["graph_aug"] = batched_graph_aug
-        # collated["label"] =  torch.cat([x["label"] for x in batch], dim=0)
-        #  For str label
-        collated["label"] = [x["label"] for x in batch]
-        return collated
-    
-    
+        batched_graph = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph"]) for sample in batch])
+        batched_graph_aug = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph_aug"]) for sample in batch])
+        batched_filenames = [sample["filename"] for sample in batch]
+        label = [x["label"] for x in batch]
+
+        if any("graph_neg" in sample for sample in batch):
+            batched_graph_neg = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph_neg"]) for sample in batch])
+            return {"graph": batched_graph, "graph_aug": batched_graph_aug, "graph_neg": batched_graph_neg, "filename": batched_filenames, "label": label}
+        else:
+            return {"graph": batched_graph, "graph_aug": batched_graph_aug, "filename": batched_filenames, "label": label}
+
     def convert_to_float32(self):
         for i in range(len(self.data)):
             self.data[i]["graph"].ndata["x"] = self.data[i]["graph"].ndata["x"].type(FloatTensor)
             self.data[i]["graph"].edata["x"] = self.data[i]["graph"].edata["x"].type(FloatTensor)
             self.data[i]["graph_aug"].ndata["x"] = self.data[i]["graph_aug"].ndata["x"].type(FloatTensor)
             self.data[i]["graph_aug"].edata["x"] = self.data[i]["graph_aug"].edata["x"].type(FloatTensor)
-    
+
+    def convert_dgl_to_pyg(self, data: DGLHeteroGraph) -> Data:
+        x = torch.flatten(data.ndata['x'], start_dim=1)
+        edge_attr = torch.flatten(data.edata['x'], start_dim=1)
+        edge_index = torch.stack(data.edges()).long()
+        num_nodes = data.num_nodes()
+        # if cfg.posenc_GraphormerBias.enable:
+        #     return graphormer_pre_processing(
+        #         Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes), 
+        #         cfg.posenc_GraphormerBias.num_spatial_types)
+        return Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes)
+
+    def generate_negative_samples(self):
+        size = len(self.data)
+        idx_drop = np.random.choice(size, size, replace=False)
+
+        for index, data in enumerate(tqdm(self.data, desc=f"Generate negative samples for {self.split}")):
+            data["graph_neg"] = self.data[idx_drop[index]]["graph"]
+
     # def __getitem__(self, idx):
     #     sample = self.data[idx]
     #     if self.random_rotate:

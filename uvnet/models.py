@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import uvnet.encoders
-
+import torch.nn.functional as F
 
 class _NonLinearClassifier(nn.Module):
     def __init__(self, input_dim, num_classes, dropout=0.3):
@@ -514,7 +514,111 @@ class Contrast(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters())
         return optimizer
     
-    
+class Triplet(pl.LightningModule):
+    """
+    PyTorch Lightning module to train/test the classifier.
+    """
+
+    def __init__(self, out_emb_dim, loss = "L2"):
+        """
+        Args:
+            num_classes (int): Number of per-solid classes in the dataset
+        """
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = UVNetContrast(out_emb_dim=out_emb_dim)
+        self.loss = triplet_loss
+
+
+    # def forward(self, batched_graph):
+    #     logits = self.model(batched_graph)
+    #     return logits
+
+    def training_step(self, batch, batch_idx):
+        inputs = batch["graph"].to(self.device)
+        inputs_pos = batch["graph_aug"].to(self.device)
+        inputs_neg = batch["graph_neg"].to(self.device)
+
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        inputs_pos.ndata["x"] = inputs_pos.ndata["x"].permute(0, 3, 1, 2)
+        inputs_pos.edata["x"] = inputs_pos.edata["x"].permute(0, 2, 1)
+        inputs_neg.ndata["x"] = inputs_neg.ndata["x"].permute(0, 3, 1, 2)
+        inputs_neg.edata["x"] = inputs_neg.edata["x"].permute(0, 2, 1)
+
+        x = self.model(inputs)
+        x_pos = self.model(inputs_pos)
+        x_neg = self.model(inputs_neg)
+
+        loss = self.loss(x, x_neg, x_pos)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        inputs = batch["graph"].to(self.device)
+        inputs_pos = batch["graph_aug"].to(self.device)
+        inputs_neg = batch["graph_neg"].to(self.device)
+
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        inputs_pos.ndata["x"] = inputs_pos.ndata["x"].permute(0, 3, 1, 2)
+        inputs_pos.edata["x"] = inputs_pos.edata["x"].permute(0, 2, 1)
+        inputs_neg.ndata["x"] = inputs_neg.ndata["x"].permute(0, 3, 1, 2)
+        inputs_neg.edata["x"] = inputs_neg.edata["x"].permute(0, 2, 1)
+
+        x = self.model(inputs)
+        x_pos = self.model(inputs_pos)
+        x_neg = self.model(inputs_neg)
+
+        loss = self.loss(x, x_neg, x_pos)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        inputs = batch["graph"].to(self.device)
+        inputs_pos = batch["graph_aug"].to(self.device)
+        inputs_neg = batch["graph_neg"].to(self.device)
+
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        inputs_pos.ndata["x"] = inputs_pos.ndata["x"].permute(0, 3, 1, 2)
+        inputs_pos.edata["x"] = inputs_pos.edata["x"].permute(0, 2, 1)
+        inputs_neg.ndata["x"] = inputs_neg.ndata["x"].permute(0, 3, 1, 2)
+        inputs_neg.edata["x"] = inputs_neg.edata["x"].permute(0, 2, 1)
+
+        x = self.model(inputs)
+        x_pos = self.model(inputs_pos)
+        x_neg = self.model(inputs_neg)
+
+        loss = self.loss(x, x_neg, x_pos)
+        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+
+    def predict(self, batch):
+        inputs = batch["graph"].to(self.device)
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        self.eval()
+        with torch.no_grad():
+            return self.model(inputs)
+        
+    def predict_one(self, graph):
+        inputs = graph.to(self.device)
+        inputs.ndata["x"] = inputs.ndata["x"].permute(0, 3, 1, 2)
+        inputs.edata["x"] = inputs.edata["x"].permute(0, 2, 1)
+        self.eval()
+        with torch.no_grad():
+            return self.model(inputs)
+
+    # Optional: For Trainer.predict()
+    def predict_step(self, batch, batch_idx, dataloader_idx = None):
+        x, _ = batch
+        return self.model(x)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters())
+        return optimizer
+
+
 def graphCl_loss(x, x_aug):
     T = 0.2
     batch_size, _ = x.size()
@@ -531,3 +635,19 @@ def graphCl_loss(x, x_aug):
 
 def L2_loss(x, x_aug):
     return torch.norm(x - x_aug, p=2, dim=1).mean()
+
+def triplet_loss(anchor, positive, negative, distance: str = "euclidean"):
+    margin = 0.2
+    if (distance == "euclidean"):
+        pos_dist = F.pairwise_distance(anchor, positive)
+        neg_dist = F.pairwise_distance(anchor, negative)
+    elif (distance == "cosine"):
+        pos_dist = 1 - F.cosine_similarity(anchor, positive)
+        neg_dist = 1 - F.cosine_similarity(anchor, negative)
+    elif (distance == "graphCl"):
+        pos_dist = graphCl_loss(anchor, pos_dist)
+        neg_dist = graphCl_loss(anchor, neg_dist)
+
+    losses = F.relu(pos_dist - neg_dist + margin)
+
+    return losses.mean()

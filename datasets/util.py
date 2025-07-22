@@ -166,7 +166,7 @@ def write_val_samples(root_dir, samples, labels):
     print(f"Saved val samples to '{root_dir}'")
 
 
-def files_load(root_dir):
+def files_load(root_dir : str, format: str = "bin", folder : str = "bin"):
     root_path = pathlib.Path(root_dir)
     if not root_path.exists():
         raise FileNotFoundError(f"The directory {root_dir} does not exist.")
@@ -177,8 +177,9 @@ def files_load(root_dir):
     file_paths = []
 
     for cls in classes:
-        cls_path = root_path / cls / "bin"
-        steps_files = list(cls_path.rglob("*.bin"))
+        # cls_path = root_path / cls / f"{folder}"
+        cls_path = root_path / cls
+        steps_files = list(cls_path.rglob(f"*.{format}"))
 
         if len(steps_files) < 2:
             print(f"Skipping class {cls} as it has fewer than 2 .bin files.")
@@ -189,14 +190,33 @@ def files_load(root_dir):
 
     return file_paths, labels
 
+def files_load_letters(root_dir : str, format: str = "bin", folder : str = "bin"):
+    root_path = pathlib.Path(root_dir)
+    if not root_path.exists():
+        raise FileNotFoundError(f"The directory {root_dir} does not exist.")
+    
+
+    stp_path = root_path / folder
+    steps_files = list(stp_path.rglob(f"*.{format}"))
+
+    labels = []
+
+    for step in steps_files:
+
+        labels.extend(str(step).split("_")[0][-1])
+
+    return steps_files, labels
+
 def validate_graphs(file_paths : list[str], labels : list[str], duplicates : bool = False):
     clean_files = []
     new_labels = []
     hashes = set()
+    # max_nodes = 0
     for index, fn in enumerate(tqdm(file_paths)):
         if not fn.exists():
             continue
         sample = load_graphs(str(fn))[0][0]
+        # max_nodes = max(max_nodes, sample.num_nodes())
         if sample is None:
             continue
         if sample.edata["x"].size(0) == 0:
@@ -279,4 +299,5 @@ def drop_nodes_dynamicaly(data : DGLHeteroGraph, threshold : int = 10):
     # drop_num = int(node_num / 10)
     idx_drop = np.random.choice(node_num, drop_num, replace=False)
     data.remove_nodes(idx_drop)
-    return data
+    return 
+
