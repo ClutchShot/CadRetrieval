@@ -12,6 +12,7 @@ import torch
 from dgl import DGLHeteroGraph
 from dgl.data.utils import load_graphs
 from sklearn.model_selection import train_test_split
+from torch_geometric.data import Data
 
 def bounding_box_uvgrid(inp: torch.Tensor):
     pts = inp[..., :3].reshape((-1, 3))
@@ -165,8 +166,20 @@ def write_val_samples(root_dir, samples, labels):
             f.write(f"{samples[i]} {labels[i]}\n")
     print(f"Saved val samples to '{root_dir}'")
 
+def get_filenames(root_dir, filelist):
+    with open(str(root_dir / f"{filelist}"), "r") as f:
+        file_list = [x.strip() for x in f.readlines()]
 
-def files_load(root_dir : str, format: str = "bin", folder : str = "bin"):
+    files = list(
+        x
+        for x in root_dir.rglob(f"*.txt")
+        if x.stem in file_list
+        #if util.valid_font(x) and x.stem in file_list
+    )
+    return files
+
+
+def files_load(root_dir : str, format: str = "bin", folder : str = None):
     root_path = pathlib.Path(root_dir)
     if not root_path.exists():
         raise FileNotFoundError(f"The directory {root_dir} does not exist.")
@@ -177,8 +190,10 @@ def files_load(root_dir : str, format: str = "bin", folder : str = "bin"):
     file_paths = []
 
     for cls in classes:
-        # cls_path = root_path / cls / f"{folder}"
-        cls_path = root_path / cls
+        if folder:
+            cls_path = root_path / cls / f"{folder}"
+        else:
+            cls_path = root_path / cls
         steps_files = list(cls_path.rglob(f"*.{format}"))
 
         if len(steps_files) < 2:
@@ -301,3 +316,10 @@ def drop_nodes_dynamicaly(data : DGLHeteroGraph, threshold : int = 10):
     data.remove_nodes(idx_drop)
     return 
 
+
+def convert_dgl_to_pyg(data : DGLHeteroGraph) -> Data:
+    x = torch.flatten(data.ndata['x'], start_dim=1)
+    edge_attr = torch.flatten(data.edata['x'], start_dim=1)
+    edge_index = torch.stack(data.edges()).long()
+    num_nodes = data.num_nodes()
+    return Data(x = x, edge_attr = edge_attr, edge_index = edge_index, num_nodes=num_nodes)

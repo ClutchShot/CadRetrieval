@@ -9,9 +9,7 @@ import numpy as np
 from dgl import DGLHeteroGraph
 from torch_geometric.data import Data, Batch
 from torch_geometric.graphgym.config import cfg
-# from GNNPlus.encoder.graphormer_encoder import graphormer_pre_processing
-from torch_geometric.loader import DataLoader
-from torch_geometric.data import Dataset
+from GNNPlus.encoder.graphormer_encoder import graphormer_pre_processing
 
 class FABWave(BaseDataset):
 
@@ -123,10 +121,10 @@ class FABWave(BaseDataset):
         edge_attr = torch.flatten(data.edata['x'], start_dim=1)
         edge_index = torch.stack(data.edges()).long()
         num_nodes = data.num_nodes()
-        # if cfg.posenc_GraphormerBias.enable:
-        #     return graphormer_pre_processing(
-        #         Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes), 
-        #         cfg.posenc_GraphormerBias.num_spatial_types)
+        if cfg.posenc_GraphormerBias.enable:
+            return graphormer_pre_processing(
+                Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes), 
+                cfg.posenc_GraphormerBias.num_spatial_types)
         return Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes)
 
     def generate_negative_samples(self):

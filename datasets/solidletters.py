@@ -11,6 +11,10 @@ from torch import FloatTensor
 import numpy as np
 from tqdm import tqdm
 import random
+from torch_geometric.data import Data, Batch
+from torch_geometric.graphgym.config import cfg
+from dgl import DGLHeteroGraph
+from GNNPlus.encoder.graphormer_encoder import graphormer_pre_processing
 
 def _get_filenames(root_dir, filelist):
     with open(str(root_dir / f"{filelist}"), "r") as f:
@@ -94,17 +98,29 @@ class SolidLetters(BaseDataset):
     #     collated["label"] =  torch.cat([x["label"] for x in batch], dim=0)
     #     return collated
     
+    # def _collate(self, batch):
+    #     collated = super()._collate(batch)
+    #     batched_graph_aug = dgl.batch([sample["graph_aug"] for sample in batch])
+    #     collated["graph_aug"] = batched_graph_aug
+    #     # collated["label"] =  torch.cat([x["label"] for x in batch], dim=0)
+    #     #  For str label
+    #     collated["label"] = [x["label"] for x in batch]
+    #     if any("graph_neg" in sample for sample in batch):
+    #         batched_graph_neg = dgl.batch([sample["graph_neg"] for sample in batch])
+    #         collated["graph_neg"] = batched_graph_neg
+    #     return collated
+    
     def _collate(self, batch):
-        collated = super()._collate(batch)
-        batched_graph_aug = dgl.batch([sample["graph_aug"] for sample in batch])
-        collated["graph_aug"] = batched_graph_aug
-        # collated["label"] =  torch.cat([x["label"] for x in batch], dim=0)
-        #  For str label
-        collated["label"] = [x["label"] for x in batch]
+        batched_graph = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph"]) for sample in batch])
+        batched_graph_aug = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph_aug"]) for sample in batch])
+        batched_filenames = [sample["filename"] for sample in batch]
+        label = [x["label"] for x in batch]
+
         if any("graph_neg" in sample for sample in batch):
-            batched_graph_neg = dgl.batch([sample["graph_neg"] for sample in batch])
-            collated["graph_neg"] = batched_graph_neg
-        return collated
+            batched_graph_neg = Batch.from_data_list([self.convert_dgl_to_pyg(sample["graph_neg"]) for sample in batch])
+            return {"graph": batched_graph, "graph_aug": batched_graph_aug, "graph_neg": batched_graph_neg, "filename": batched_filenames, "label": label}
+        else:
+            return {"graph": batched_graph, "graph_aug": batched_graph_aug, "filename": batched_filenames, "label": label}
 
     def convert_to_float32(self):
         for i in range(len(self.data)):
@@ -120,3 +136,15 @@ class SolidLetters(BaseDataset):
 
         for index, data in enumerate(tqdm(self.data, desc=f"Generate negative samples for {self.split}")):
             data["graph_neg"] = self.data[idx_drop[index]]["graph"]
+
+
+    def convert_dgl_to_pyg(self, data: DGLHeteroGraph) -> Data:
+        x = torch.flatten(data.ndata['x'], start_dim=1)
+        edge_attr = torch.flatten(data.edata['x'], start_dim=1)
+        edge_index = torch.stack(data.edges()).long()
+        num_nodes = data.num_nodes()
+        if cfg.posenc_GraphormerBias.enable:
+            return graphormer_pre_processing(
+                Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes), 
+                cfg.posenc_GraphormerBias.num_spatial_types)
+        return Data(x=x, edge_attr=edge_attr, edge_index=edge_index, num_nodes=num_nodes)

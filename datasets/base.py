@@ -15,10 +15,12 @@ class BaseDataset(Dataset):
 
     def load_graphs(self, file_paths, center_and_scale=True):
         self.data = []
+        max_nodes = 0
         for fn in tqdm(file_paths):
             if not fn.exists():
                 continue
             sample = self.load_one_graph(fn)
+            max_nodes = max(max_nodes, sample["graph"].num_nodes())
             if sample is None:
                 continue
             if sample["graph"].edata["x"].size(0) == 0:
