@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = CNNAutoencoder(latent_dim=1024, in_channels=14*3).to(device)
-    model = ViTAutoencoder(image_size=512, patch_size=16, latent_dim=512).to(device)
+    model = ViTAutoencoder(image_size=512, patch_size=64, latent_dim=512).to(device)
     model.print_model_summary()
 
     root_dir = "./data/SolidLetters/"
@@ -150,12 +150,13 @@ if __name__ == "__main__":
     test_dataset = ImageDataset(test_png_paths, test_label, test_names)
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 
     model.train()
     for epoch in range(10):
         # Assume batch shape: [B, 3, 224, 224]
+        epoch_loss = 0.0
         for images, labels, names in tqdm(train_loader, desc="Training"):
             batch = images.to(device)
             optimizer.zero_grad()
@@ -165,7 +166,10 @@ if __name__ == "__main__":
 
             loss.backward()
             optimizer.step()
-        print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
+            epoch_loss += loss.item()
+
+        avg_loss = epoch_loss / len(train_loader)
+        print(f"Epoch {epoch}, Avg loss: {avg_loss:.4f}")
 
     vec_db = VectorDatabase(db_path, dataset, out_dim)
     if vec_db.get_vector_count() == 0:
