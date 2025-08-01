@@ -275,6 +275,148 @@ def train_vit_autoencoder(model, train_loader, num_epochs=20, learning_rate=1e-4
     return losses
 
 
+class StackedImageViTAutoencoder(nn.Module):
+    def __init__(self, num_images=3, image_size=224, in_channels=3, latent_dim=512, 
+                 dim=768, depth=6, heads=8, mlp_dim=1024, dropout=0.1):
+        super().__init__()
+        
+        self.num_images = num_images
+        self.image_size = image_size
+        self.in_channels = in_channels
+        self.latent_dim = latent_dim
+        
+        # Image embedding - convert each image to a token
+        image_dim = in_channels * image_size * image_size
+        self.image_embedding = nn.Linear(image_dim, dim)
+        
+        # Positional embedding for image positions in stack
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_images + 1, dim))
+        
+        # Class token for global representation
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        
+        # Transformer encoder
+        self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
+        
+        # Latent projection
+        self.to_latent = nn.Linear(dim, latent_dim)
+        
+        # Decoder components
+        self.decoder_projection = nn.Linear(latent_dim, dim)
+        self.decoder_pos_embedding = nn.Parameter(torch.randn(1, num_images, dim))
+        self.decoder_transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
+        self.decoder_image_projection = nn.Linear(dim, image_dim)
+        
+        # Final reconstruction layers
+        self.reconstruction = nn.Sigmoid()
+
+    def forward(self, img_stack):
+        """
+        Args:
+            img_stack: Tensor of shape (batch_size, num_images, in_channels, H, W)
+        """
+        batch_size = img_stack.shape[0]
+        
+        # Flatten each image in the stack
+        # img_stack: (B, N, C, H, W) -> (B, N, C*H*W)
+        flattened_images = rearrange(img_stack, 'b n c h w -> b n (c h w)')
+        
+        # Embed each image as a token
+        x = self.image_embedding(flattened_images)  # (B, N, dim)
+        
+        # Add positional embedding
+        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=batch_size)
+        x = torch.cat((cls_tokens, x), dim=1)  # (B, N+1, dim)
+        x += self.pos_embedding[:, :(self.num_images + 1)]
+        
+        # Transformer encoding
+        x = self.transformer(x)
+        
+        # Extract class token and project to latent space
+        latent = self.to_latent(x[:, 0])  # (B, latent_dim)
+        
+        # Decoding
+        # Expand latent to image dimension
+        decoded_images = self.decoder_projection(latent).unsqueeze(1)  # (B, 1, dim)
+        decoded_images = decoded_images.repeat(1, self.num_images, 1)  # (B, N, dim)
+        decoded_images += self.decoder_pos_embedding[:, :self.num_images]
+        
+        # Transformer decoding
+        decoded = self.decoder_transformer(decoded_images)  # (B, N, dim)
+        
+        # Project back to image space
+        decoded = self.decoder_image_projection(decoded)  # (B, N, C*H*W)
+        
+        # Reshape to image stack
+        reconstructed = rearrange(decoded, 'b n (c h w) -> b n c h w',
+                                c=self.in_channels,
+                                h=self.image_size,
+                                w=self.image_size)
+        
+        reconstructed = self.reconstruction(reconstructed)
+        
+        return reconstructed, latent
+
+    def encode(self, img_stack):
+        """Extract latent representation from image stack"""
+        batch_size = img_stack.shape[0]
+        flattened_images = rearrange(img_stack, 'b n c h w -> b n (c h w)')
+        x = self.image_embedding(flattened_images)
+        
+        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=batch_size)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding[:, :(self.num_images + 1)]
+        
+        x = self.transformer(x)
+        latent = self.to_latent(x[:, 0])
+        return latent
 
 
-
+    def get_num_params(self, trainable_only=True):
+        """
+        Get the number of parameters in the model
+        
+        Args:
+            trainable_only (bool): If True, count only trainable parameters
+            
+        Returns:
+            int: Number of parameters
+        """
+        if trainable_only:
+            return sum(p.numel() for p in self.parameters() if p.requires_grad)
+        else:
+            return sum(p.numel() for p in self.parameters())
+    
+    def get_model_info(self):
+        """
+        Get detailed information about the model
+        
+        Returns:
+            dict: Dictionary containing model information
+        """
+        total_params = self.get_num_params(trainable_only=False)
+        trainable_params = self.get_num_params(trainable_only=True)
+        non_trainable_params = total_params - trainable_params
+        
+        return {
+            'total_params': total_params,
+            'trainable_params': trainable_params,
+            'non_trainable_params': non_trainable_params,
+            'image_size': self.image_size,
+            'latent_dim': self.latent_dim
+        }
+    
+    def print_model_summary(self):
+        """
+        Print a detailed summary of the model
+        """
+        info = self.get_model_info()
+        print("=" * 50)
+        print("ViT Autoencoder Model Summary")
+        print("=" * 50)
+        print(f"Image Size: {info['image_size']}x{info['image_size']}")
+        print(f"Latent Dimension: {info['latent_dim']}")
+        print(f"Total Parameters: {info['total_params']:,}")
+        print(f"Trainable Parameters: {info['trainable_params']:,}")
+        print(f"Non-trainable Parameters: {info['non_trainable_params']:,}")
+        print("=" * 50)
