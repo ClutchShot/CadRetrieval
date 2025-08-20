@@ -18,7 +18,7 @@ import time
 from datasets.util import filter_classes_by_min_samples
 import gzip
 import torch.multiprocessing as mp
-
+from datasets.util import files_load
 
 class ImageDataset(Dataset):
     def __init__(self, image_paths, labels=None, names=None):
@@ -75,8 +75,8 @@ class MultiImageDataset(Dataset):
                       "isometric1", "isometric2", "isometric3", "isometric4",
                       "isometric5", "isometric6", "isometric7", "isometric8"]
 
-        self.views_polarity = [
-            f"{view}_neg" for view in self.views] + [f"{view}_pos" for view in self.views]
+        # self.views_polarity = [
+        #     f"{view}_neg" for view in self.views] + [f"{view}_pos" for view in self.views]
 
     def __len__(self):
         return len(self.names)
@@ -85,7 +85,7 @@ class MultiImageDataset(Dataset):
         # Load image
 
         vectors = []
-        for view in self.views_polarity:
+        for view in self.views:
             image_path = self.data_paths / f"{self.names[idx]}_{view}.png"
             image = Image.open(image_path).convert('RGB')
 
@@ -167,23 +167,23 @@ def save_for_inference(model, filepath, input_shape=None):
 
 # Example usage
 if __name__ == "__main__":
-    # mp.set_start_method('spawn', force=True)
+    mp.set_start_method('spawn', force=True)
     # Initialize model
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CNNAutoencoder(
-        latent_dim=1024, in_channels=14*2*3, image_size=512).to(device)
+        latent_dim=1024, in_channels=14*3, image_size=512).to(device)
     # model = ViTAutoencoder(image_size=512, patch_size=64, latent_dim=512).to(device)
     # model = StackedImageViTAutoencoder(num_images=14, image_size=32, latent_dim=512).to(device)
     model.print_model_summary()
 
-    root_dir = "./data/SolidLetters/"
-    # root_dir = "./data/Fabwave/"
+    # root_dir = "./data/SolidLetters/"
+    root_dir = "./data/Fabwave/"
     root_dir = pathlib.Path(root_dir)
     out_dim = 1024
 
-    db_path = "./vector_db/autoencoder_cnn_solidletters10x28x512x32xrotate"
-    dataset = "solidletters"
+    db_path = "./vector_db/autoencoder_cnn_Fabwave30x14x1024xrotate"
+    dataset = "Fabwave"
     # hour_min_second = time.strftime("%H%M%S")
     # results_path = pathlib.Path(f"./results/CNN/{hour_min_second}")
     # if not results_path.exists():
@@ -206,37 +206,63 @@ if __name__ == "__main__":
     # test_dataset = BinaryDataset(test_data, test_label)
     # test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn)
 
-    # SolidLetters bin
-    data_path = root_dir / "img_bin_28_rotate_512"
 
-    files = [file for file in root_dir.rglob(f"*.pt.gz")]
-    valid_samples = [ str(file.name).split("_cat512x512")[0]  for file in files]
+    # Fabwave
+    files_all = [file for file in root_dir.rglob(f"*_cat512x512.pt.gz")]
+    files = []
+    for file in files_all:
+        if "_standart_" not in file.name:
+            files.append(file)
+    labels = [file.parent.parent.name  for file in files]
 
+    files, labels  = filter_classes_by_min_samples(files, labels)
 
-    train_samples = get_samples(root_dir, "train.txt")
-    test_samples = get_samples(root_dir, "test.txt")
-
-    train_samples = filter_list_by_set(train_samples, valid_samples)
-    test_samples = filter_list_by_set(test_samples, valid_samples)
-
-    train_label = [name.split("_")[0] for name in train_samples]
-    test_label = [name.split("_")[0] for name in test_samples]
-
-    train_data = [
-        data_path / f"{file_name}_cat512x512.pt.gz" for file_name in train_samples]
-    test_data = [data_path /
-                 f"{file_name}_cat512x512.pt.gz" for file_name in test_samples]
+    train_data, test_data, train_label, test_label =  train_test_split(files, labels, test_size=0.2, random_state=42, stratify=labels)
+    train_names = [str(name.stem) for name in train_data]
+    test_names = [str(name.stem) for name in test_data]
 
     train_dataset = BinaryDataset(train_data, train_label, compressed=True)
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
                               num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
                               prefetch_factor=2, persistent_workers=True)
 
-    test_dataset = BinaryDataset(test_data, test_label)
-    test_loader = DataLoader(test_dataset, batch_size=16,
-                             shuffle=False, collate_fn=collate_fn,
-                              num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+    test_dataset = BinaryDataset(test_data, test_label, compressed=True)
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
+                              num_workers=4, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
                               prefetch_factor=2, persistent_workers=True)
+
+
+    # SolidLetters bin
+    # data_path = root_dir / "img_bin_28_rotate_512"
+
+    # files = [file for file in root_dir.rglob(f"*.pt.gz")]
+    # valid_samples = [ str(file.name).split("_cat512x512")[0]  for file in files]
+
+
+    # train_samples = get_samples(root_dir, "train.txt")
+    # test_samples = get_samples(root_dir, "test.txt")
+
+    # train_samples = filter_list_by_set(train_samples, valid_samples)
+    # test_samples = filter_list_by_set(test_samples, valid_samples)
+
+    # train_label = [name.split("_")[0] for name in train_samples]
+    # test_label = [name.split("_")[0] for name in test_samples]
+
+    # train_data = [
+    #     data_path / f"{file_name}_cat512x512.pt.gz" for file_name in train_samples]
+    # test_data = [data_path /
+    #              f"{file_name}_cat512x512.pt.gz" for file_name in test_samples]
+
+    # train_dataset = BinaryDataset(train_data, train_label, compressed=True)
+    # train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
+    #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+    #                           prefetch_factor=2, persistent_workers=True)
+
+    # test_dataset = BinaryDataset(test_data, test_label, compressed=True)
+    # test_loader = DataLoader(test_dataset, batch_size=16,
+    #                          shuffle=False, collate_fn=collate_fn,
+    #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+    #                           prefetch_factor=2, persistent_workers=True)
 
     # Multi Image
     # data_path = root_dir / "png_random_pos_neg"
@@ -282,7 +308,7 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()
 
     model.train()
-    for epoch in range(10):
+    for epoch in range(40):
         # Assume batch shape: [B, 3, 224, 224]
         epoch_loss = 0.0
         for images, labels, names in tqdm(train_loader, desc="Training"):
