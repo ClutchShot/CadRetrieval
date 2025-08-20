@@ -10,6 +10,7 @@ import glob
 import os
 import torch
 from dgl import DGLHeteroGraph
+from dgl import to_bidirected
 from dgl.data.utils import load_graphs
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
@@ -323,3 +324,22 @@ def convert_dgl_to_pyg(data : DGLHeteroGraph) -> Data:
     edge_index = torch.stack(data.edges()).long()
     num_nodes = data.num_nodes()
     return Data(x = x, edge_attr = edge_attr, edge_index = edge_index, num_nodes=num_nodes)
+
+
+def convert_dgl_to_adjancy_matrix(data : DGLHeteroGraph) -> torch.Tensor:
+    row, col = data.adj_tensors("coo")   # both are 1-D int64 tensors
+    edge_weights = torch.ones(row.size(0), device=row.device)  # unweighted => all 1'
+    num_nodes = data.num_nodes() 
+
+    indices = torch.stack([row, col], dim=0)   # shape [2, num_edges]
+    unique_indices, unique_values = torch.unique(indices, dim=1, return_counts=True)
+    unique_ones = torch.ones(unique_values.size(0), device=row.device)
+
+    return torch.sparse_coo_tensor(
+        unique_indices,
+        unique_ones,
+        size=(num_nodes, num_nodes),
+        dtype=torch.float32,
+    ).to_dense()
+
+     
