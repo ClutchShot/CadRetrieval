@@ -9,7 +9,7 @@ from retrieval.metrics import calculate_map
 import pathlib
 from utils.read import get_filenames_by_type_and_key, get_samples, get_all_png_filenames, filter_list_by_set
 from utils.safe_results import safe_raw_results, safe_by_class_results, safe_total_results
-from autoencoder.cnn import CNNAutoencoder
+from autoencoder.cnn import CNNAutoencoder, CNNVariationalAutoencoder, vae_loss, get_latent_embedding
 from autoencoder.vit import ViTAutoencoder, StackedImageViTAutoencoder
 import random
 from sklearn.model_selection import train_test_split
@@ -19,6 +19,7 @@ from datasets.util import filter_classes_by_min_samples
 import gzip
 import torch.multiprocessing as mp
 from datasets.util import files_load
+from tqdm import tqdm
 
 class ImageDataset(Dataset):
     def __init__(self, image_paths, labels=None, names=None):
@@ -104,7 +105,7 @@ class MultiImageDataset(Dataset):
 class BinaryDataset(Dataset):
     """Dataset class for loading binary files (.bin, .pt, .npy, etc.)"""
 
-    def __init__(self, data_paths: pathlib.Path, labels: list, compressed: bool = False):
+    def __init__(self, data_paths: list[pathlib.Path], labels: list, compressed: bool = False):
         """
         Args:
             data_dir: Directory containing binary files
@@ -112,30 +113,47 @@ class BinaryDataset(Dataset):
         self.data_dir = data_paths
         self.labels = labels
         self.compressed = compressed
+        self.data = []
+        self._load_data()
+
+    def _load_data(self):
+        for file in tqdm(self.data_dir, desc="Load data to RAM"):
+            if self.compressed:
+                with gzip.open(file, 'rb') as f:
+                    data = torch.load(f)
+            else:
+                data = torch.load(file)
+            self.data.append(data)
 
     def __len__(self) -> int:
         """Return number of binary files"""
         return len(self.data_dir)
 
+    # def __getitem__(self, idx: int):
+    #     """Load and return binary data at index"""
+    #     file_path = self.data_dir[idx]
+    #     label = self.labels[idx]
+    #     name = self.data_dir[idx].stem
+    #     try:
+    #         # Load binary data
+    #         if self.compressed:
+    #             with gzip.open(file_path, 'rb') as f:
+    #                 data = torch.load(f)
+    #         else:
+    #             data = torch.load(file_path)
+    #         # idx = torch.randperm(14)
+    #         # data = data[idx]
+    #         # data = x_shuffled.reshape(14 * 3, 32, 32)
+    #         return data, label, name
+    #     except Exception as e:
+    #         raise RuntimeError(f"Error loading {file_path}: {e}")
+
     def __getitem__(self, idx: int):
         """Load and return binary data at index"""
-        file_path = self.data_dir[idx]
+        data = self.data[idx]
         label = self.labels[idx]
         name = self.data_dir[idx].stem
-        try:
-            # Load binary data
-            if self.compressed:
-                with gzip.open(file_path, 'rb') as f:
-                    data = torch.load(f)
-            else:
-                data = torch.load(file_path)
-            # idx = torch.randperm(14)
-            # data = data[idx]
-            # data = x_shuffled.reshape(14 * 3, 32, 32)
-            return data, label, name
-
-        except Exception as e:
-            raise RuntimeError(f"Error loading {file_path}: {e}")
+        return data, label, name
 
 
 def collate_fn(batch):
@@ -170,24 +188,24 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
     # Initialize model
 
+    out_dim = 1024
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CNNAutoencoder(
-        latent_dim=1024, in_channels=14*3, image_size=512).to(device)
+    # model = CNNAutoencoder(latent_dim=1024, in_channels=14*3, image_size=512).to(device)
+    model = CNNVariationalAutoencoder(latent_dim=out_dim, in_channels=14*3, image_size=512).to(device)
     # model = ViTAutoencoder(image_size=512, patch_size=64, latent_dim=512).to(device)
     # model = StackedImageViTAutoencoder(num_images=14, image_size=32, latent_dim=512).to(device)
     model.print_model_summary()
 
-    # root_dir = "./data/SolidLetters/"
-    root_dir = "./data/Fabwave/"
+    root_dir = "./data/SolidLetters/"
+    # root_dir = "./data/Fabwave/"
     root_dir = pathlib.Path(root_dir)
-    out_dim = 1024
 
-    db_path = "./vector_db/autoencoder_cnn_Fabwave30x14x1024xrotate"
-    dataset = "Fabwave"
-    # hour_min_second = time.strftime("%H%M%S")
-    # results_path = pathlib.Path(f"./results/CNN/{hour_min_second}")
-    # if not results_path.exists():
-    #     results_path.mkdir(parents=True, exist_ok=True)
+    db_path = "./vector_db/autoencoder_cnnv_solidelettersl0x14x1024xrotate"
+    dataset = "SolidLetters"
+    hour_min_second = time.strftime("%H%M%S")
+    results_path = pathlib.Path(f"./results/CNNV/{hour_min_second}")
+    if not results_path.exists():
+        results_path.mkdir(parents=True, exist_ok=True)
 
     # files = [file for file in root_dir.rglob(f"*_stack32x32.bin")]
     # labels = [file.parent.parent.name  for file in files]
@@ -208,29 +226,58 @@ if __name__ == "__main__":
 
 
     # Fabwave
-    files_all = [file for file in root_dir.rglob(f"*_cat512x512.pt.gz")]
-    files = []
-    for file in files_all:
-        if "_standart_" not in file.name:
-            files.append(file)
-    labels = [file.parent.parent.name  for file in files]
+    # files_all = [file for file in root_dir.rglob(f"*_cat512x512.pt.gz")]
+    # files = []
+    # for file in files_all:
+    #     if "_standart_" not in file.name:
+    #         files.append(file)
+    # labels = [file.parent.parent.name  for file in files]
 
-    files, labels  = filter_classes_by_min_samples(files, labels)
+    # files, labels  = filter_classes_by_min_samples(files, labels)
 
-    train_data, test_data, train_label, test_label =  train_test_split(files, labels, test_size=0.2, random_state=42, stratify=labels)
-    train_names = [str(name.stem) for name in train_data]
-    test_names = [str(name.stem) for name in test_data]
+    # train_data, test_data, train_label, test_label =  train_test_split(files, labels, test_size=0.2, random_state=42, stratify=labels)
+    # train_names = [str(name.stem) for name in train_data]
+    # test_names = [str(name.stem) for name in test_data]
+
+    # train_dataset = BinaryDataset(train_data, train_label, compressed=True)
+    # train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
+    #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+    #                           prefetch_factor=2, persistent_workers=True)
+
+    # test_dataset = BinaryDataset(test_data, test_label, compressed=True)
+    # test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
+    #                           num_workers=4, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+    #                           prefetch_factor=2, persistent_workers=True)
+
+    # SolidLetters bin
+    train_samples = get_samples(root_dir, "train.txt")
+    test_samples = get_samples(root_dir, "test.txt")
+
+    train_data = []
+    for file in train_samples:
+        img_file = root_dir / "img_bin_14_512_rotate_grey" / f"{file}_cat512x512.pt.gz"
+        if img_file.exists():
+            train_data.append(img_file)
+    
+    train_label = [file.stem.split("_")[0]  for file in train_data]
+
+    test_data = []
+    for file in test_samples:
+        img_file = root_dir / "img_bin_14_512_rotate_grey" / f"{file}_cat512x512.pt.gz"
+        if img_file.exists():
+            test_data.append(img_file)
+    
+    test_label = [file.stem.split("_")[0]  for file in test_data]
 
     train_dataset = BinaryDataset(train_data, train_label, compressed=True)
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
-                              num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+                              num_workers=4, multiprocessing_context=mp.get_context('spawn'),
                               prefetch_factor=2, persistent_workers=True)
 
     test_dataset = BinaryDataset(test_data, test_label, compressed=True)
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
-                              num_workers=4, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
+                              num_workers=4, multiprocessing_context=mp.get_context('spawn'),
                               prefetch_factor=2, persistent_workers=True)
-
 
     # SolidLetters bin
     # data_path = root_dir / "img_bin_28_rotate_512"
@@ -264,63 +311,23 @@ if __name__ == "__main__":
     #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'), pin_memory=True,
     #                           prefetch_factor=2, persistent_workers=True)
 
-    # Multi Image
-    # data_path = root_dir / "png_random_pos_neg"
-
-    # valid_samples = get_all_png_filenames(data_path)
-
-    # train_samples = get_samples(root_dir, "train.txt")
-    # test_samples = get_samples(root_dir, "test.txt")
-
-    # train_samples = filter_list_by_set(train_samples, valid_samples)
-    # test_samples = filter_list_by_set(test_samples, valid_samples)
-
-    # train_label = [name.split("_")[0] for name in train_samples]
-    # test_label = [name.split("_")[0] for name in test_samples]
-
-    # train_dataset = MultiImageDataset(data_path, train_label, train_samples)
-    # train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
-    #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'),
-    #                           prefetch_factor=2, persistent_workers=True)
-
-    # test_dataset = MultiImageDataset(data_path, test_label, test_samples)
-    # test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn,
-    #                           num_workers=8, multiprocessing_context=mp.get_context('spawn'),
-    #                           prefetch_factor=2, persistent_workers=True)
-
-    # Single image
-    # train_png_paths = get_filenames_by_type_and_key(root_dir, "train.txt", ".png", "_bottom")
-    # test_png_paths = get_filenames_by_type_and_key(root_dir, "test.txt", ".png", "_bottom")
-
-    # train_names = [path.stem for path in train_png_paths]
-    # train_label = [name.split("_")[0] for name in train_names]
-
-    # test_names = [path.stem for path in test_png_paths]
-    # test_label = [name.split("_")[0] for name in test_names]
-
-    # train_dataset = ImageDataset(train_png_paths, train_label, train_names)
-    # train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn)
-
-    # test_dataset = ImageDataset(test_png_paths, test_label, test_names)
-    # test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
 
     model.train()
-    for epoch in range(40):
-        # Assume batch shape: [B, 3, 224, 224]
+    for epoch in range(10):
         epoch_loss = 0.0
         for images, labels, names in tqdm(train_loader, desc="Training"):
             batch = images.to(device, non_blocking=True)
             optimizer.zero_grad()
 
-            try:
-                recon_batch, z = model(batch)
-            except:
-                continue
-            loss = criterion(recon_batch, batch)
+            # recon_batch, z = model(batch)
+            recon, mu, logvar, z = model(batch)
 
+            loss = vae_loss(recon, batch, mu, logvar, beta=1.0)
+
+            # loss = criterion(recon_batch, batch)s
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -335,7 +342,8 @@ if __name__ == "__main__":
         with torch.no_grad():
             for images, labels, names in tqdm(train_loader, desc="Infernce train data"):
                 batch = images.to(device, non_blocking=True)
-                out = model.encode(batch).cpu().numpy()
+                # out = model.encode(batch).cpu().numpy()
+                out = get_latent_embedding(model, batch, True).cpu().numpy()
                 vec_db.add_vectors(vectors=out, names=names,
                                    labels=labels, duplicates=True)
 
@@ -346,9 +354,8 @@ if __name__ == "__main__":
     with torch.no_grad():
         for images, labels, names in tqdm(test_loader, desc="Eval"):
             batch = images.to(device, non_blocking=True)
-            out = model.encode(batch).cpu().numpy()
-            vec_db.add_vectors(vectors=out, names=names,
-                               labels=labels, duplicates=True)
+            # out = model.encode(batch).cpu().numpy()
+            out = get_latent_embedding(model, batch, True).cpu().numpy()
 
             retrieval_topk = vec_db.search(out, k=7)
             retrieval_all.extend(retrieval_topk)
@@ -361,4 +368,4 @@ if __name__ == "__main__":
     df_grouped = safe_by_class_results(db_path, detailed)
     safe_total_results(db_path, map_score, df_grouped)
 
-    # save_for_inference(model, results_path)
+    save_for_inference(model, results_path)
